@@ -1,0 +1,260 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* ============================================================
+   Light theme (default). WCAG AA targets ≥4.5:1 for body text.
+   Palette: warm cream surface + obsidian ink + crimson accent + yellow.
+   ============================================================ */
+:root {
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.145 0 0);
+
+  --card: oklch(1 0 0);                          /* pure white cards */
+  --card-foreground: oklch(0.18 0.01 280);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.01 280);
+
+  --primary: oklch(0.18 0 0);
+  --primary-foreground: oklch(0.985 0.005 90);
+
+  --secondary: oklch(0.955 0 0);
+  --secondary-foreground: oklch(0.25 0.01 280);
+
+  --muted: oklch(0.955 0 0);
+  --muted-foreground: oklch(0.46 0 0);
+
+  --accent: oklch(0.93 0 0);
+  --accent-foreground: oklch(0.18 0.01 280);
+
+  --destructive: oklch(0.52 0.22 27);             /* crimson — 4.6:1 on bg */
+  --destructive-foreground: oklch(0.985 0.005 90);
+
+  --success: oklch(0.55 0.16 145);                /* green for active toggles */
+  --success-foreground: oklch(0.985 0.005 90);
+
+  --warning: oklch(0.78 0.16 88);                 /* amber */
+  --warning-foreground: oklch(0.18 0.01 280);
+
+  --border: oklch(0.88 0 0);
+  --input: oklch(0.88 0 0);
+  --ring: oklch(0.35 0 0);
+
+  /* Brand accents — tuned for legibility, not just punch.
+     accent-yellow drops chroma from 0.18 to 0.12 (less neon) and
+     lightness from 0.82 to 0.72 so it's a warm amber that doesn't
+     burn the eye on small text / badges in light mode. Dark mode
+     keeps the punchier values since the eye expects more saturation
+     against a dark surface. */
+    --accent-yellow: oklch(0.22 0 0);
+    --accent-yellow-foreground: oklch(0.18 0 0);
+    --accent-yellow-soft: oklch(0.94 0 0);
+    --accent-blue: oklch(0.55 0.18 255);            /* 4.6:1 on bg */
+    --accent-blue-foreground: oklch(0.985 0.005 90);
+    --accent-pink: oklch(0.55 0.22 0);              /* 4.6:1 on bg */
+    --accent-pink-foreground: oklch(0.985 0.005 90);
+
+  --radius: 0.75rem;
+
+  --sidebar: oklch(0.965 0 0);
+  --sidebar-foreground: oklch(0.2 0 0);
+  --sidebar-primary: oklch(0.18 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0.005 90);
+  --sidebar-accent: oklch(0.9 0 0);
+  --sidebar-accent-foreground: oklch(0.18 0.01 280);
+  --sidebar-border: oklch(0.86 0 0);
+  --sidebar-ring: oklch(0.35 0 0);
+}
+
+/* ============================================================
+   Dark theme. Same tokens, inverted lightness, contrast preserved.
+   ============================================================ */
+.dark {
+  --background: oklch(0.13 0.005 280);            /* near-black, slight cool */
+  --foreground: oklch(0.97 0.005 90);            /* warm white */
+
+  --card: oklch(0.17 0.006 280);
+  --card-foreground: oklch(0.97 0.005 90);
+
+  --popover: oklch(0.17 0.006 280);
+  --popover-foreground: oklch(0.97 0.005 90);
+
+  --primary: oklch(0.97 0.005 90);
+  --primary-foreground: oklch(0.13 0.005 280);
+
+  --secondary: oklch(0.24 0.006 280);
+  --secondary-foreground: oklch(0.97 0.005 90);
+
+  --muted: oklch(0.21 0.006 280);
+  --muted-foreground: oklch(0.72 0.01 280);       /* ≥4.5:1 on background */
+
+  --accent: oklch(0.24 0.006 280);
+  --accent-foreground: oklch(0.97 0.005 90);
+
+  --destructive: oklch(0.62 0.22 27);             /* brighter on dark */
+  --destructive-foreground: oklch(0.97 0.005 90);
+
+  --success: oklch(0.7 0.16 145);
+  --success-foreground: oklch(0.13 0.005 280);
+
+  --warning: oklch(0.82 0.16 88);
+  --warning-foreground: oklch(0.13 0.005 280);
+
+  --border: oklch(0.28 0.006 280);
+  --input: oklch(0.28 0.006 280);
+  --ring: oklch(0.82 0.18 95);
+
+  --accent-yellow: oklch(0.9 0 0);
+    --accent-yellow-foreground: oklch(0.13 0.005 280);
+    --accent-blue: oklch(0.7 0.17 255);              /* ≥4.5:1 on dark bg */
+    --accent-blue-foreground: oklch(0.13 0.005 280);
+    --accent-pink: oklch(0.72 0.2 0);
+    --accent-pink-foreground: oklch(0.13 0.005 280);
+
+  --sidebar: oklch(0.13 0.005 280);
+  --sidebar-foreground: oklch(0.85 0.005 90);
+  --sidebar-primary: oklch(0.97 0.005 90);
+  --sidebar-primary-foreground: oklch(0.13 0.005 280);
+  --sidebar-accent: oklch(0.21 0.006 280);
+  --sidebar-accent-foreground: oklch(0.97 0.005 90);
+  --sidebar-border: oklch(0.24 0.006 280);
+  --sidebar-ring: oklch(0.85 0.18 95);
+}
+
+@theme inline {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-serif: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Brand accents — exposed as Tailwind colors so we can use bg-accent-yellow etc. */
+    --color-accent-yellow: var(--accent-yellow);
+    --color-accent-yellow-foreground: var(--accent-yellow-foreground);
+    --color-accent-yellow-soft: var(--accent-yellow-soft);
+    --color-accent-blue: var(--accent-blue);
+    --color-accent-blue-foreground: var(--accent-blue-foreground);
+    --color-accent-pink: var(--accent-pink);
+    --color-accent-pink-foreground: var(--accent-pink-foreground);
+  }
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+body {
+    @apply bg-background text-foreground antialiased;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Subtle surface utilities — theme-aware */
+.glass-panel {
+  @apply bg-card/60 backdrop-blur-md border border-border;
+}
+
+.hover-glow {
+  @apply transition-colors duration-200;
+}
+.hover-glow:hover {
+  @apply bg-accent;
+}
+
+.vercel-row-hover {
+  @apply transition-colors cursor-pointer;
+}
+.vercel-row-hover:hover {
+  background-color: color-mix(in oklch, var(--accent) 60%, transparent);
+}
+
+/* Editorial scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-border rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklch, var(--border) 60%, var(--foreground) 40%);
+}
+
+/* Editorial type utilities (shared across app) */
+.font-serif-display {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+.font-mono-ui {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0.04em;
+}
+
+.dashboard-canvas {
+  background-color: var(--background);
+  background-image: none;
+}
+
+.dashboard-canvas [class*="backdrop-"] {
+  backdrop-filter: none !important;
+}
+
+.dashboard-canvas [class*="bg-card/"],
+.dashboard-canvas [class*="bg-white/"] {
+  background-color: var(--card) !important;
+}
+
+.dashboard-canvas [class*="bg-muted/"] {
+  background-color: var(--muted) !important;
+}
+
+.dashboard-canvas [class*="bg-accent-yellow/"] {
+  background-color: var(--accent) !important;
+}
+
+.dashboard-canvas [class*="bg-black/"] {
+  background-color: #0a0a0a !important;
+}
