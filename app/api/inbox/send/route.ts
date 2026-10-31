@@ -46,7 +46,13 @@ export async function POST(request: NextRequest) {
 
         if (data.error) {
             console.error("[Inbox Send] Instagram API Error:", data.error)
-            return NextResponse.json({ error: data.error.message }, { status: 500 })
+            // Instagram only allows replies within 24h of the person's last message
+            const outsideWindow = data.error.error_subcode === 2534022 || /allowed window/i.test(data.error.message || "")
+            return NextResponse.json({
+                error: outsideWindow
+                    ? "Instagram only allows replies within 24 hours of this person's last message."
+                    : data.error.error_user_msg || data.error.message,
+            }, { status: outsideWindow ? 422 : 502 })
         }
 
         // 4. Log to Database (Outbound Message)
@@ -56,14 +62,14 @@ export async function POST(request: NextRequest) {
             .select("id")
             .eq("user_id", userId)
             .eq("recipient_id", recipientId)
-            .single()
+            .maybeSingle()
 
-        // If conversation doesn't exist (unlikely if replying, but possible if initiating), create it logic is tricky here 
+        // If conversation doesn't exist (unlikely if replying, but possible if initiating), create it logic is tricky here
         // without knowing username. Assuming it exists for now as this is usually a reply flow.
 
         if (conv) {
             await supabase.from("messages").insert({
-                id: `mid_out_${Date.now()}_${Math.random()}`,
+                id: data.message_id || `mid_out_${Date.now()}_${Math.random()}`,
                 conversation_id: conv.id,
                 user_id: userId,
                 sender_id: user.business_account_id,

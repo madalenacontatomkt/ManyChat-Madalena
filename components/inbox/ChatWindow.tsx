@@ -1,10 +1,21 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
-import { Send, Loader2, MoreVertical, Phone, Video, Zap, ChevronLeft } from "lucide-react"
+import { useCallback, useEffect, useState, useRef } from "react"
+import { Send, Loader2, Zap, ChevronLeft, ExternalLink } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { Message } from "@/types/db"
+
+const REFRESH_INTERVAL_MS = 5000
+
+function quickReplyText(automation: any): string {
+    let content = automation.response_content
+    if (typeof content === "string") {
+        try { content = JSON.parse(content) } catch { return content }
+    }
+    return content?.message || automation.name
+}
 
 interface ChatWindowProps {
     conversationId: string | null
@@ -23,26 +34,36 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
     const [automations, setAutomations] = useState<any[]>([])
     const bottomRef = useRef<HTMLDivElement>(null)
 
+    const activeConversation = useRef(conversationId)
+    activeConversation.current = conversationId
+
+    const fetchMessages = useCallback(async (id: string) => {
+        try {
+            const res = await fetch(`/api/inbox/messages?conversationId=${id}`, { cache: "no-store" })
+            const data = await res.json()
+            // Ignore responses for a conversation the user already left
+            if (activeConversation.current === id && Array.isArray(data)) {
+                setMessages(data)
+            }
+        } catch (error) {
+            console.error("Failed to load messages", error)
+        }
+    }, [])
+
     useEffect(() => {
         if (!conversationId) return
 
-        const fetchMessages = async () => {
-            setLoading(true)
-            try {
-                const res = await fetch(`/api/inbox/messages?conversationId=${conversationId}`)
-                const data = await res.json()
-                if (Array.isArray(data)) {
-                    setMessages(data)
-                }
-            } catch (error) {
-                console.error("Failed to load messages", error)
-            } finally {
-                setLoading(false)
-            }
-        }
+        setMessages([])
+        setLoading(true)
+        fetchMessages(conversationId).finally(() => {
+            if (activeConversation.current === conversationId) setLoading(false)
+        })
 
-        fetchMessages()
-    }, [conversationId])
+        const interval = setInterval(() => {
+            if (document.visibilityState === "visible") fetchMessages(conversationId)
+        }, REFRESH_INTERVAL_MS)
+        return () => clearInterval(interval)
+    }, [conversationId, fetchMessages])
 
     // Fetch automations for quick reply
     useEffect(() => {
@@ -53,9 +74,10 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
         }
     }, [userId])
 
+    // Only scroll when a message is added, so background refreshes don't yank the view
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-    }, [messages])
+    }, [messages.length])
 
     const handleSendMessage = async (text: string = inputText) => {
         if (!text.trim() || !recipientId || !userId) return
@@ -86,9 +108,14 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                     created_at: new Date().toISOString()
                 }
                 setMessages(prev => [...prev, newMsg])
+                fetchMessages(conversationId!)
+            } else {
+                const data = await res.json().catch(() => null)
+                toast.error(data?.error || "Message not sent")
             }
         } catch (e) {
             console.error("Send failed", e)
+            toast.error("Message not sent. Check your connection and try again.")
         } finally {
             setSending(false)
             setIsAutomationOpen(false)
@@ -124,17 +151,17 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                     <div className="w-8 h-8 rounded-full bg-muted border border-border shrink-0" />
                     <div className="min-w-0">
                         <h3 className="font-bold text-foreground text-sm truncate">@{recipientName}</h3>
-                        <span className="hidden md:flex items-center gap-1.5 text-[10px] text-success">
-                            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-                            Online via Instagram
-                        </span>
+                        <span className="hidden md:block text-[10px] text-muted-foreground">Instagram Direct</span>
                     </div>
                 </div>
-                <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hidden md:flex" aria-label="Call"><Phone className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hidden md:flex" aria-label="Video"><Video className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="More"><MoreVertical className="w-4 h-4" /></Button>
-                </div>
+                {recipientName && (
+                    <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-foreground">
+                        <a href={`https://instagram.com/${recipientName}`} target="_blank" rel="noopener noreferrer">
+                            <span className="hidden md:inline">View profile</span>
+                            <ExternalLink className="w-4 h-4" />
+                        </a>
+                    </Button>
+                )}
             </div>
 
             {/* Messages Area */}
@@ -142,6 +169,10 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                 {loading ? (
                     <div className="flex justify-center py-10">
                         <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
+                    </div>
+                ) : messages.length === 0 ? (
+                    <div className="py-10 text-center text-sm text-muted-foreground">
+                        No messages saved for this conversation yet.
                     </div>
                 ) : (
                     messages.map((msg) => {
@@ -177,7 +208,7 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                         {automations.map(auto => (
                             <button
                                 key={auto.id}
-                                onClick={() => handleSendMessage(auto.response_content?.message || auto.name)}
+                                onClick={() => handleSendMessage(quickReplyText(auto))}
                                 className="w-full text-left px-3 py-2 rounded-lg hover:bg-accent text-sm text-popover-foreground transition-colors flex items-center gap-2"
                             >
                                 <Zap className="w-3 h-3 text-accent-yellow-foreground dark:text-accent-yellow" />

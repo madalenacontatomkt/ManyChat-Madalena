@@ -267,13 +267,14 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const { data: automations } = await supabase
+      // No early exit when there are no rules: DMs still have to reach the inbox,
+      // and ice breakers / AI auto-reply don't depend on automations.
+      const { data: activeAutomations } = await supabase
         .from("automations")
         .select("*")
         .eq("user_id", user.id)
         .eq("is_active", true)
-
-      if (!automations?.length) continue
+      const automations = activeAutomations || []
 
       // ============================================================
       //  PART A: COMMENTS
@@ -527,6 +528,9 @@ export async function POST(request: NextRequest) {
 
           console.log(`[webhook] 📩 DM from ${senderId}: "${triggerValue}"`)
 
+          // What the person actually saw/tapped, for the inbox (payloads are internal ids)
+          const inboxText = event.message?.text || event.postback?.title || triggerValue
+
           // Inbox bookkeeping runs alongside delivery, not ahead of it. Always
           // joined below so serverless shutdown cannot discard pending writes.
           const incomingSaved = (async () => {
@@ -570,7 +574,7 @@ export async function POST(request: NextRequest) {
                 user_id: user.id,
                 sender_id: senderId,
                 sender_username: "User",
-                content: triggerValue,
+                content: inboxText,
                 is_from_instagram: true,
               })
             }
@@ -593,12 +597,22 @@ export async function POST(request: NextRequest) {
                         match = automations.find((a) => a.id === ruleId)
                       } else if (triggerValue.startsWith("ICE_BREAKER_")) {
                         const iceBreakerId = triggerValue.replace("ICE_BREAKER_", "")
-                        const { data: ib } = await supabase
+                        let { data: ib } = await supabase
                           .from("ice_breakers")
                           .select("*")
                           .eq("id", iceBreakerId)
                           .eq("user_id", user.id)
-                          .single()
+                          .maybeSingle()
+                        // A device may still show an older version of the list; fall back to the question text
+                        if (!ib && event.postback?.title) {
+                          const { data: byQuestion } = await supabase
+                            .from("ice_breakers")
+                            .select("*")
+                            .eq("user_id", user.id)
+                            .eq("question", event.postback.title)
+                            .limit(1)
+                          ib = byQuestion?.[0] ?? null
+                        }
                         if (ib) {
                           match = { name: "Ice Breaker: " + ib.question, response_content: { message: ib.response } }
                         }

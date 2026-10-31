@@ -1,5 +1,14 @@
+import { randomUUID } from "crypto"
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
+
+const GRAPH = "https://graph.instagram.com/v24.0"
+const MAX_ICE_BREAKERS = 4 // Instagram limit
+const MAX_QUESTION_LENGTH = 80
+
+function errorMessage(error: any): string {
+    return error?.message || error?.error_user_msg || String(error)
+}
 
 export async function GET(request: NextRequest) {
     try {
@@ -20,7 +29,36 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(data)
     } catch (error) {
         console.error("Ice Breaker GET Error:", error)
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+        return NextResponse.json({ error: errorMessage(error) }, { status: 500 })
+    }
+}
+
+/**
+ * Pushes the list to Instagram. An empty list removes the ice breakers from the profile.
+ * Format: https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/messaging-api/ice-breakers
+ */
+async function syncToInstagram(accessToken: string, rows: { id: string; question: string }[]) {
+    const url = `${GRAPH}/me/messenger_profile?access_token=${encodeURIComponent(accessToken)}`
+    const res = rows.length
+        ? await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                platform: "instagram",
+                ice_breakers: [{
+                    call_to_actions: rows.map(row => ({ question: row.question, payload: `ICE_BREAKER_${row.id}` })),
+                }],
+            }),
+        })
+        : await fetch(url, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fields: ["ice_breakers"] }),
+        })
+
+    const result = await res.json().catch(() => ({}))
+    if (!res.ok || result.error) {
+        throw new Error(result.error?.error_user_msg || result.error?.message || `Instagram returned HTTP ${res.status}`)
     }
 }
 
@@ -33,75 +71,84 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
         }
 
+        const items = iceBreakers.map((ib: any) => ({
+            id: typeof ib.id === "string" ? ib.id : undefined,
+            question: String(ib.question ?? "").trim(),
+            response: String(ib.response ?? "").trim(),
+        }))
+
+        if (items.length > MAX_ICE_BREAKERS) {
+            return NextResponse.json({ error: `Instagram allows at most ${MAX_ICE_BREAKERS} conversation starters` }, { status: 400 })
+        }
+        if (items.some(item => !item.question || !item.response)) {
+            return NextResponse.json({ error: "Every conversation starter needs a question and a response" }, { status: 400 })
+        }
+        if (items.some(item => item.question.length > MAX_QUESTION_LENGTH)) {
+            return NextResponse.json({ error: `Questions must be ${MAX_QUESTION_LENGTH} characters or fewer` }, { status: 400 })
+        }
+
         const supabase = await getSupabaseServerClient()
 
-        // 1. Update Database (Replace all for simplicity or Upsert)
-        // Strategy: Delete all for user and re-insert. Simple and effective for limited list (max 4).
-        const { error: deleteError } = await supabase
+        const { data: user, error: userError } = await supabase
+            .from("users")
+            .select("access_token")
+            .eq("id", userId)
+            .single()
+
+        if (userError || !user) {
+            return NextResponse.json({ error: "User not found. Reconnect your Instagram account." }, { status: 404 })
+        }
+
+        // 1. Save to the database. Existing rows keep their id so the payload of
+        // ice breakers already cached on people's devices keeps resolving in the webhook.
+        const { data: existing, error: existingError } = await supabase
             .from("ice_breakers")
-            .delete()
+            .select("id")
             .eq("user_id", userId)
+
+        if (existingError) throw existingError
+
+        const existingIds = new Set((existing || []).map(row => row.id))
+        const rows = items.map(item => ({
+            id: item.id && existingIds.has(item.id) ? item.id : randomUUID(),
+            user_id: userId,
+            question: item.question,
+            response: item.response,
+            is_active: true,
+        }))
+
+        if (rows.length) {
+            const { error: upsertError } = await supabase.from("ice_breakers").upsert(rows, { onConflict: "id" })
+            if (upsertError) throw upsertError
+        }
+
+        const removeQuery = supabase.from("ice_breakers").delete().eq("user_id", userId)
+        const { error: deleteError } = rows.length
+            ? await removeQuery.not("id", "in", `(${rows.map(row => row.id).join(",")})`)
+            : await removeQuery
 
         if (deleteError) throw deleteError
 
-        const { data: inserted, error: insertError } = await supabase
+        const { data: saved, error: savedError } = await supabase
             .from("ice_breakers")
-            .insert(iceBreakers.map((ib: any) => ({
-                user_id: userId,
-                question: ib.question,
-                response: ib.response,
-                is_active: true
-            })))
-            .select()
+            .select("*")
+            .eq("user_id", userId)
+            .order("created_at", { ascending: true })
 
-        if (insertError) throw insertError
+        if (savedError) throw savedError
 
-        // 2. Sync to Instagram
-        const { data: user } = await supabase.from("users").select("access_token, page_id").eq("id", userId).single()
-
-        if (user && user.access_token && user.page_id) {
-            // Construct IG Payload
-            const ice_breakers = inserted.map((ib: any) => ({
-                question: ib.question,
-                payload: `ICE_BREAKER_${ib.id}`
-            }))
-
-            // We need to SAVE/MAP this payload to the response? 
-            // Actually, for simple text reply, we can handle the payload in webhook. 
-            // BUT, our current webhook looks for Keywords or Postbacks. 
-            // Let's assume standard behavior: User clicks question -> It sends the question as text? 
-            // No, Ice Breakers send a Postback payload usually. 
-            // IF we want to reply with the `response`, we need to map the payload to the response.
-            // Let's update the DB insert to include payload if possible, or just match by Question Text (easier for now).
-            // IG says: "When a person taps an ice breaker, your webhook receives a messaging_postbacks event."
-
-            // Wait, current DB schema doesn't have payload. 
-            // Let's use the 'question' as the trigger for now or rely on the fact that we just need to set them.
-            // Actually, keeping it simple: We set them on IG. When user clicks, we get a Postback.
-            // We need to know which response to send. 
-
-            const response = await fetch(
-                `https://graph.instagram.com/v21.0/me/messenger_profile?access_token=${user.access_token}`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        ice_breakers: ice_breakers,
-                        platform: "instagram" // Important
-                    })
-                }
-            )
-            const igResult = await response.json()
-            if (igResult.error) {
-                console.error("IG Sync Error", igResult.error)
-                return NextResponse.json({ success: true, warning: "Saved to DB but IG Sync failed", error: igResult.error }, { status: 200 })
-            }
+        // 2. Sync to Instagram, in the order shown in the editor
+        try {
+            await syncToInstagram(user.access_token, rows)
+        } catch (syncError) {
+            console.error("IG Sync Error", syncError)
+            return NextResponse.json({ success: true, synced: false, error: errorMessage(syncError), data: saved })
         }
 
-        return NextResponse.json({ success: true, data: inserted })
+        return NextResponse.json({ success: true, synced: true, data: saved })
 
     } catch (error) {
         console.error("Ice Breaker POST Error:", error)
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+        return NextResponse.json({ error: errorMessage(error) }, { status: 500 })
     }
 }
