@@ -15,19 +15,22 @@ export function IceBreakersManager() {
     const [breakers, setBreakers] = useState<IceBreakerRow[]>([])
     const [saving, setSaving] = useState(false)
     const [fetching, setFetching] = useState(true)
+    const [loadError, setLoadError] = useState<string | null>(null)
 
     useEffect(() => {
         if (!userId) return
         fetch(`/api/ice-breakers?userId=${userId}`)
-            .then(res => res.json())
-            .then(data => {
+            .then(async res => {
+                const data = await res.json()
+                if (!res.ok) throw new Error(data?.error || "Could not load conversation starters")
                 if (Array.isArray(data)) setBreakers(data)
-                setFetching(false)
+                setLoadError(null)
             })
             .catch(err => {
                 console.error(err)
-                setFetching(false)
+                setLoadError(err instanceof Error ? err.message : "Could not load conversation starters")
             })
+            .finally(() => setFetching(false))
     }, [userId])
 
     const handleAdd = () => {
@@ -65,13 +68,19 @@ export function IceBreakersManager() {
                 body: JSON.stringify({ userId, iceBreakers: breakers })
             })
             const data = await res.json()
-            if (data.success) {
-                toast.success("Ice Breakers saved & synced usually!")
+            if (!res.ok || !data.success) {
+                toast.error(data?.error || "Failed to save")
+                return
+            }
+            if (Array.isArray(data.data)) setBreakers(data.data)
+            setLoadError(null)
+            if (data.synced) {
+                toast.success(breakers.length ? "Saved and published to Instagram" : "Conversation starters removed from Instagram")
             } else {
-                toast.error("Failed to save")
+                toast.warning(`Saved, but Instagram rejected the update: ${data.error}`)
             }
         } catch (e) {
-            toast.error("Error saving")
+            toast.error("Error saving. Check your connection and try again.")
         } finally {
             setSaving(false)
         }
@@ -123,13 +132,22 @@ export function IceBreakersManager() {
                 </Button>
             </div>
 
+            {loadError && (
+                <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                    {loadError}
+                </div>
+            )}
+
             <div className="space-y-4">
                 {breakers.map((item, idx) => (
-                    <div key={idx} className="bg-card border border-border p-4 rounded-xl space-y-3 relative group">
+                    <div key={item.id ?? `new-${idx}`} className="bg-card border border-border p-4 rounded-xl space-y-3 relative group">
                         <div className="flex justify-between items-start gap-4">
                             <div className="flex-1 space-y-3">
                                 <div>
-                                    <label className="text-xs text-muted-foreground font-semibold uppercase">Question</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs text-muted-foreground font-semibold uppercase">Question</label>
+                                        <span className="text-[10px] tabular-nums text-muted-foreground">{item.question.length}/80</span>
+                                    </div>
                                     <Input
                                         value={item.question}
                                         onChange={e => handleChange(idx, "question", e.target.value)}
@@ -182,7 +200,7 @@ export function IceBreakersManager() {
             <div className="bg-muted border border-border p-4 rounded-xl flex gap-3 text-sm text-foreground">
                 <RefreshCw className="w-5 h-5 shrink-0 text-muted-foreground" />
                 <p>
-                    Changes made here are automatically synced to your Instagram Profile. It may take a few minutes for them to appear for all users.
+                    Save & Sync publishes these questions to your Instagram profile. They show up when someone opens a new chat with you, and it may take a few minutes for everyone to see them.
                 </p>
             </div>
         </div>
