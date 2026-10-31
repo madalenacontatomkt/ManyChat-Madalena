@@ -45,8 +45,10 @@ async function syncToInstagram(accessToken: string, rows: { id: string; question
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 platform: "instagram",
+                // Instagram requires the (call_to_actions, locale) keyset together
                 ice_breakers: [{
                     call_to_actions: rows.map(row => ({ question: row.question, payload: `ICE_BREAKER_${row.id}` })),
+                    locale: "default",
                 }],
             }),
         })
